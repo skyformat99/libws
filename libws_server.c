@@ -206,7 +206,6 @@ __read(aeEventLoop *el, int fd, void *privdata, int mask) {
     }
     if (nread <= 0) {
         __close(el, io);
-        aeStop(el);
         return;
     }
     if (!io->handshake) {
@@ -233,6 +232,7 @@ __read(aeEventLoop *el, int fd, void *privdata, int mask) {
             WS_BUILD_FIN(flags);
             libws__build(data, flags, &f.payload);
             anetWrite(io->fd, data, size);
+            free(data);
             if (f.payload.data) free(f.payload.data);
         }
         if (rc) {
