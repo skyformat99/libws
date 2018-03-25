@@ -1,24 +1,16 @@
-#define LIBWS_IMPLEMENTATION
-#include "libws.h"
-
-#include "http_parser.h"
+#define LIBWSHTTP_IMPLEMENTATION
+#include "libwshttp.h"
 
 #include "lib/ae.h"
 #include "lib/anet.h"
 
 #include <unistd.h>
 #include <errno.h>
+#include <sys/socket.h>
 
 struct ae_io {
     int fd;
-    int handshake;
-    http_parser http_p;
-    struct libws_parser ws_p;
-    char key[WS_KEY_LEN];
-    char accept[WS_ACCEPT_LEN];
-    int flags;
-    const char *header_at;
-    size_t header_length;
+    struct libwshttp *wh;
 };
 
 enum {
@@ -249,96 +241,13 @@ load_file(void) {
     return 0;
 }
 
-static int
-__on_message_begin(http_parser *p) {
-    (void)p;
-    if (!quiet) fprintf(stdout, "__on_message_begin\n");
-    return 0;
-}
-
-static int
-__on_url(http_parser *p, const char *at, size_t length) {
-    (void)p;
-    if (!quiet) fprintf(stdout, "__on_url %.*s\n", (int)length, at);
-    return 0;
-}
-
-static int
-__on_status(http_parser *p, const char *at, size_t length) {
-    (void)p;
-    if (!quiet) fprintf(stdout, "__on_status %.*s\n", (int)length, at);
-    return 0;
-}
-
-static int
-__on_header_field(http_parser *p, const char *at, size_t length) {
-    struct ae_io *io = (struct ae_io *)p->data;
-    io->header_at = at;
-    io->header_length = length;
-    if (!quiet) fprintf(stdout, "__on_header_field %.*s\n", (int)length, at);
-    return 0;
-}
-
-static int
-__on_header_value(http_parser *p, const char *at, size_t length) {
-    struct ae_io *io = (struct ae_io *)p->data;
-    int flag = libws__valid_header(&io->flags, io->header_at, io->header_length, at, length);
-    if (flag == WS_HEADER_ACCEPT) {
-        strncpy(io->accept, at, length);
-    }
-    if (!quiet) fprintf(stdout, "__on_header_value %.*s\n", (int)length, at);
-    return 0;
-}
-
-static int
-__on_headers_complete(http_parser *p) {
-    struct ae_io *io = (struct ae_io *)p->data;
-    if (!quiet) fprintf(stdout, "__on_headers_complete\n");
-    if (p->status_code != HTTP_STATUS_SWITCHING_PROTOCOLS) {
-        return -1;
-    }
-    if (io->flags != WS_HEADER_RSP) {
-        return -1;
-    }
-    if (libws__handshake(io->key, io->accept)) {
-        return -1;
-    }
-    io->handshake = 1;
-    return 0;
-}
-
-static int
-__on_body(http_parser *p, const char *at, size_t length) {
-    (void)p;
-    if (!quiet) fprintf(stdout, "__on_body %.*s\n", (int)length, at);
-    return 0;
-}
-
-static int
-__on_message_complete(http_parser *p) {
-    struct ae_io *io = (struct ae_io *)p->data;
-    if (!quiet) fprintf(stdout, "__on_message_complete\n");
-    if (io->handshake) {
-        struct libws_b b = {.data = payload, .length = length};
-        uint64_t size = libws__build_size(1, length);
-        char *data = malloc(size);
-        int flags = 0;
-        WS_BUILD_OPCODE(flags, WS_OPCODE_TEXT);
-        WS_BUILD_FIN(flags);
-        WS_BUILD_MASK(flags);
-        libws__build(data, flags, &b);
-        anetWrite(io->fd, data, size);
-        free(data);
-    }
-    return 0;
-}
-
 static void
 __close(aeEventLoop *el, struct ae_io *io) {
     if (AE_ERR != io->fd) {
         aeDeleteFileEvent(el, io->fd, AE_READABLE);
         close(io->fd);
     }
+    libwshttp__destroy(io->wh);
     free(io);
 }
 
@@ -347,17 +256,10 @@ __read(aeEventLoop *el, int fd, void *privdata, int mask) {
     struct ae_io *io;
     int nread;
     char buff[4096];
+    struct libws_b b;
+    struct libwshttp_event evt;
+    int rc;
     (void)mask;
-    static http_parser_settings settings = {
-        .on_message_begin = __on_message_begin,
-        .on_url = __on_url,
-        .on_status = __on_status,
-        .on_header_field = __on_header_field,
-        .on_header_value = __on_header_value,
-        .on_headers_complete = __on_headers_complete,
-        .on_body = __on_body,
-        .on_message_complete = __on_message_complete
-    };
 
     io = (struct ae_io *)privdata;
     nread = read(fd, buff, sizeof(buff));
@@ -369,32 +271,30 @@ __read(aeEventLoop *el, int fd, void *privdata, int mask) {
         aeStop(el);
         return;
     }
-    if (!io->handshake) {
-        int parsed = http_parser_execute(&io->http_p, &settings, buff, nread);
-        if (io->http_p.http_errno) {
-            if (!quiet) fprintf(stderr, "http_parser_execute: %s %s\n", http_errno_name(io->http_p.http_errno), http_errno_description(io->http_p.http_errno));
-            __close(el, io);
-            aeStop(el);
-            return;
-        }
-        if (parsed != nread) {
-            if (!quiet) fprintf(stdout, "http_parser_execute parsed: %d, nread:%d\n", parsed, nread);
-        }
-    } else {
-        struct libws_b b = {.data = buff, .length = nread};
-        struct libws_frame f;
-        int rc;
 
-        while ((rc = libws__parser_execute(&io->ws_p, &b, &f)) > 0) {
-            fprintf(stdout, "opcode:%d, payload:%.*s\n", f.opcode, (int)f.payload.length, f.payload.data);
-            if (f.payload.data) free(f.payload.data);
-        }
-        if (rc) {
-            __close(el, io);
-            aeStop(el);
-            return;
+    b.data = buff;
+    b.length = nread;
+
+    while ((rc = libwshttp__feed(io->wh, &b, &evt)) > 0) {
+        if (evt.event == LIBWSHTTP_OPEN) {
+            struct libws_b b = {.data = payload, .length = length};
+            libwshttp__write(io->wh, WS_OPCODE_BINARY, &b);
+        } else if (evt.event == LIBWSHTTP_DATA) {
+            fprintf(stdout, "opcode:%d, payload:%.*s\n", evt.f.opcode, (int)evt.f.payload.length, evt.f.payload.data);
+            free(evt.f.payload.data);
         }
     }
+    if (rc) {
+        shutdown(fd, SHUT_WR);
+    }
+}
+
+static int
+_write(void *inst, const char *data, int size) {
+    struct ae_io *io;
+
+    io = (struct ae_io *)inst;
+    return anetWrite(io->fd, (char *)data, size);
 }
 
 static struct ae_io *
@@ -421,6 +321,8 @@ __connect(aeEventLoop *el, char *host, int port) {
     }
 
     io->fd = fd;
+    io->wh = libwshttp__create(0, io, _write);
+    libwshttp__request(io->wh, url, host, protocol);
     return io;
 
 e2:
@@ -465,13 +367,6 @@ main(int argc, char *argv[]) {
     if (!io) {
         return 0;
     }
-    http_parser_init(&io->http_p, HTTP_RESPONSE);
-    io->http_p.data = io;
-    libws__parser_init(&io->ws_p);
-
-    char request[4096];
-    int n = libws__request(request, 4096, url, host, host, protocol, io->key);
-    anetWrite(io->fd, request, n);
 
     aeMain(el);
     aeDeleteEventLoop(el);
