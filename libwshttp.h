@@ -55,7 +55,7 @@ struct libwshttp;
 /**
  *
  */
-extern LIBWSHTTP_API struct libwshttp *libwshttp__create(int issrv, void *io, int (*write)(void *io, const char *data, int size));
+extern LIBWSHTTP_API struct libwshttp *libwshttp__create(int issrv, void *io, int (*write)(void *io, const char *data, int size), void (*close)(void *io));
 
 /**
  * 
@@ -73,6 +73,11 @@ extern LIBWSHTTP_API int libwshttp__feed(struct libwshttp *wh, struct libws_b *b
  * 
  */
 extern LIBWSHTTP_API int libwshttp__write(struct libwshttp *wh, int opcode, struct libws_b *payload);
+
+/**
+ * 
+ */
+extern LIBWSHTTP_API void libwshttp__close(struct libwshttp *wh, int close_status, const char *reason);
 
 #ifdef __cplusplus
 }
@@ -104,6 +109,7 @@ struct libwshttp {
     int issrv;
     void *io;
     int (*write)(void *, const char *, int);
+    void (*close)(void *);
 };
 
 
@@ -193,7 +199,7 @@ __on_message_complete(http_parser *p) {
 }
 
 struct libwshttp *
-libwshttp__create(int issrv, void *io, int (*write)(void *io, const char *data, int size)) {
+libwshttp__create(int issrv, void *io, int (*write)(void *io, const char *data, int size), void (*close)(void *io)) {
     struct libwshttp *wh;
 
     wh = (struct libwshttp *)malloc(sizeof *wh);
@@ -202,6 +208,7 @@ libwshttp__create(int issrv, void *io, int (*write)(void *io, const char *data, 
     wh->issrv = issrv;
     wh->io = io;
     wh->write = write;
+    wh->close = close;
     http_parser_init(&wh->http_p, issrv ? HTTP_REQUEST : HTTP_RESPONSE);
     wh->http_p.data = wh;
     libws__parser_init(&wh->ws_p);
@@ -252,7 +259,16 @@ libwshttp__feed(struct libwshttp *wh, struct libws_b *b, struct libwshttp_event 
         if (rc <= 0) {
             return rc;
         }
-        evt->event = LIBWSHTTP_DATA;
+        if (evt->f.opcode == WS_OPCODE_PING) {
+            struct libws_b dummy = {0, 0};
+            libwshttp__write(wh, WS_OPCODE_PONG, &dummy);
+            return 0;
+        }
+        if (evt->f.opcode == WS_OPCODE_CLOSE) {
+            evt->event = LIBWSHTTP_CLOSE;
+        } else {
+            evt->event = LIBWSHTTP_DATA;
+        }
         return rc;
     }
 }
@@ -273,6 +289,22 @@ libwshttp__write(struct libwshttp *wh, int opcode, struct libws_b *payload) {
     rc = wh->write(wh->io, data, size);
     free(data);
     return rc;
+}
+
+void
+libwshttp__close(struct libwshttp *wh, int close_status, const char *reason) {
+    struct libws_b b;
+    int len = strlen(reason);
+    char payload[2 + len];
+    uint16_t s = htons((uint16_t)close_status);
+    char *p = (char *)&s;
+    memcpy(payload, p, sizeof s);
+    memcpy(payload + sizeof s, reason, len);
+    b.data = payload;
+    b.length = len + 2;
+
+    libwshttp__write(wh, WS_OPCODE_CLOSE, &b);
+    wh->close(wh->io);
 }
 
 void

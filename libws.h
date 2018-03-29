@@ -119,7 +119,7 @@ extern "C" {
 //help define
 #define WS_CLOSE_STATUS(payload)    ((((payload)[0]) << 8) | (unsigned char)((payload)[1]))
 #define WS_CLOSE_REASON(payload)    ((payload) + 2)
-#define WS_CLOSE_REASON_LEN(len)    ((len) - 2)
+#define WS_CLOSE_REASON_LEN(len)    ((int)(len) - 2)
 #define WS_CLOSE_FRAME(payload, status, reason) \
     do {payload[0] = (char)(status >> 8); payload[1] = (char)(status & 0xff); memcpy(payload+2, reason, strlen(reason));} while (0)
 

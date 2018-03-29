@@ -282,6 +282,10 @@ __read(aeEventLoop *el, int fd, void *privdata, int mask) {
         } else if (evt.event == LIBWSHTTP_DATA) {
             fprintf(stdout, "opcode:%d, payload:%.*s\n", evt.f.opcode, (int)evt.f.payload.length, evt.f.payload.data);
             free(evt.f.payload.data);
+            libwshttp__close(io->wh, WS_STATUS_NORMAL, "byebye");
+        } else if (evt.event == LIBWSHTTP_CLOSE) {
+            fprintf(stdout, "opcode:%d, status:%d, reason:%.*s\n", evt.f.opcode, WS_CLOSE_STATUS(evt.f.payload.data),
+                    WS_CLOSE_REASON_LEN(evt.f.payload.length), WS_CLOSE_REASON(evt.f.payload.data));
         }
     }
     if (rc) {
@@ -295,6 +299,14 @@ _write(void *inst, const char *data, int size) {
 
     io = (struct ae_io *)inst;
     return anetWrite(io->fd, (char *)data, size);
+}
+
+static void
+_close(void *inst) {
+    struct ae_io *io;
+
+    io = (struct ae_io *)inst;
+    shutdown(io->fd, SHUT_WR);
 }
 
 static struct ae_io *
@@ -321,7 +333,7 @@ __connect(aeEventLoop *el, char *host, int port) {
     }
 
     io->fd = fd;
-    io->wh = libwshttp__create(0, io, _write);
+    io->wh = libwshttp__create(0, io, _write, _close);
     libwshttp__request(io->wh, url, host, protocol);
     return io;
 
