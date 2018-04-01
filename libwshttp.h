@@ -296,7 +296,7 @@ libwshttp__close(struct libwshttp *wh, int close_status, const char *reason) {
     struct libws_b b;
     int len = strlen(reason);
     char payload[2 + len];
-    uint16_t s = htons((uint16_t)close_status);
+    uint16_t s = (uint16_t)((close_status & 0xff00) >> 8 | (close_status & 0xff) << 8);
     char *p = (char *)&s;
     memcpy(payload, p, sizeof s);
     memcpy(payload + sizeof s, reason, len);
