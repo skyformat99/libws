@@ -183,10 +183,10 @@ __on_message_complete(http_parser *p) {
     if (wh->issrv) {
         char response[LIBWSHTTP_MAX_HTTP_LEN];
         int n = libws__response(response, LIBWSHTTP_MAX_HTTP_LEN, LIBWSHTTP_DEF_SERVER, wh->protocol, wh->key, wh->accept);
-        if (wh->write(wh->io, response, n) > 0) {
-            wh->handshake = 1;
-        } else {
+        if (wh->write(wh->io, response, n)) {
             return -1;
+        } else {
+            wh->handshake = 1;
         }
     } else {
         if (!libws__handshake(wh->key, wh->accept)) {
@@ -220,8 +220,7 @@ int
 libwshttp__request(struct libwshttp *wh, const char *url, const char *host, const char *protocol) {
     char request[LIBWSHTTP_MAX_HTTP_LEN];
     int n = libws__request(request, LIBWSHTTP_MAX_HTTP_LEN, url, host, host, protocol, wh->key);
-    int ret = wh->write(wh->io, request, n);
-    return ret == n ? 0 : -1;
+    return wh->write(wh->io, request, n);
 }
 
 int

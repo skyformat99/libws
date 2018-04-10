@@ -146,7 +146,7 @@ _write(void *inst, const char *data, int size) {
     struct ae_io *io;
 
     io = (struct ae_io *)inst;
-    return anetWrite(io->fd, (char *)data, size);
+    return size == anetWrite(io->fd, (char *)data, size) ? 0 : -1;
 }
 
 static void
