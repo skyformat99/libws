@@ -117,7 +117,7 @@ __read(aeEventLoop *el, int fd, void *privdata, int mask) {
         __close(el, io);
         return;
     }
-    
+
     b.data = buff;
     b.length = nread;
 
@@ -129,8 +129,11 @@ __read(aeEventLoop *el, int fd, void *privdata, int mask) {
             libwshttp__write(io->wh, WS_OPCODE_BINARY, &evt.f.payload);
             free(evt.f.payload.data);
         } else if (evt.event == LIBWSHTTP_CLOSE) {
-            fprintf(stdout, "opcode:%d, status:%d, reason:%.*s\n", evt.f.opcode, WS_CLOSE_STATUS(evt.f.payload.data),
-                    WS_CLOSE_REASON_LEN(evt.f.payload.length), WS_CLOSE_REASON(evt.f.payload.data));
+            if (evt.f.payload.length) {
+                fprintf(stdout, "opcode:%d, status:%d, reason:%.*s\n", evt.f.opcode, WS_CLOSE_STATUS(evt.f.payload), WS_CLOSE_REASON_LEN(evt.f.payload), WS_CLOSE_REASON(evt.f.payload));
+            } else {
+                fprintf(stdout, "opcode:%d\n", evt.f.opcode);
+            }
         }
     }
     if (rc) {

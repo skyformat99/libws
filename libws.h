@@ -117,9 +117,9 @@ extern "C" {
                                  WS_HEADER_ACCEPT)
 
 //help define
-#define WS_CLOSE_STATUS(payload)    ((((payload)[0]) << 8) | (unsigned char)((payload)[1]))
-#define WS_CLOSE_REASON(payload)    ((payload) + 2)
-#define WS_CLOSE_REASON_LEN(len)    ((int)(len) - 2)
+#define WS_CLOSE_STATUS(payload)    ((((payload).data[0]) << 8) | (unsigned char)((payload).data[1]))
+#define WS_CLOSE_REASON(payload)    ((payload).data + 2)
+#define WS_CLOSE_REASON_LEN(payload)    ((int)(payload).length - 2)
 #define WS_CLOSE_FRAME(payload, status, reason) \
     do {payload[0] = (char)(status >> 8); payload[1] = (char)(status & 0xff); memcpy(payload+2, reason, strlen(reason));} while (0)
 
