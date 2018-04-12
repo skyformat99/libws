@@ -169,7 +169,7 @@ extern LIBWS_API uint64_t libws__build_size(int mask, uint64_t length);
 
 /**
  * build a websocket frame into data
- * 
+ *
  * flags:
  *      opcode - WS_BUILD_OPCODE()
  *         fin - WS_BUILD_FIN()
@@ -184,7 +184,7 @@ extern LIBWS_API void libws__parser_init(struct libws_parser *p);
 
 /**
  * parse a websocket frame from b
- * 
+ *
  * return:
  *      -1 - parse error
  *       0 - parse finish, need more data
@@ -514,7 +514,7 @@ libws__generate_accept(char accept[WS_ACCEPT_LEN], const char key[WS_KEY_LEN]) {
 
 int
 libws__request(char *request, size_t len, const char *url, const char *host, const char *origin,
-                  const char *protocol, char key[WS_KEY_LEN]) {
+               const char *protocol, char key[WS_KEY_LEN]) {
     libws__generate_key(key);
 
     const char *fmt =
@@ -533,7 +533,7 @@ libws__request(char *request, size_t len, const char *url, const char *host, con
 
 int
 libws__response(char *response, size_t len, const char *server, const char *protocol,
-                   const char key[WS_KEY_LEN], char accept[WS_ACCEPT_LEN]) {
+                const char key[WS_KEY_LEN], char accept[WS_ACCEPT_LEN]) {
 
     libws__generate_accept(accept, key);
 

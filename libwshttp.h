@@ -58,24 +58,24 @@ struct libwshttp;
 extern LIBWSHTTP_API struct libwshttp *libwshttp__create(int issrv, void *io, int (*write)(void *io, const char *data, int size), void (*close)(void *io));
 
 /**
- * 
- * 
+ *
+ *
  */
 extern LIBWSHTTP_API void libwshttp__destroy(struct libwshttp *wh);
 
 /**
- * 
+ *
  */
 extern LIBWSHTTP_API int libwshttp__feed(struct libwshttp *wh, struct libws_b *b, struct libwshttp_event *evt);
 
 /**
- * 
- * 
+ *
+ *
  */
 extern LIBWSHTTP_API int libwshttp__write(struct libwshttp *wh, int opcode, struct libws_b *payload);
 
 /**
- * 
+ *
  */
 extern LIBWSHTTP_API void libwshttp__close(struct libwshttp *wh, int close_status, const char *reason);
 
